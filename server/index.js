@@ -42,34 +42,84 @@ socketIO.on("connection", (socket) => {
 	// socket.emit('connect', {message: 'a new client connected'});
 	socket.on("createUser", (user) => {
 		users.unshift(user);
-		console.log(users);
-	})
-	
-	socket.on("createRoom", (name) => {
-		socket.join(name);
-		chatRooms.unshift({ id: generateID(), name, messages: [] });
-		socket.emit("roomsList", chatRooms);
 	});
+	
+	// const us = ['ali','amir','hamid'];
+	// const u = 'ali';
+	// const search = 'a';
+
+	// console.log(us.filter(e => e == u).filter(e => e.includes(search)));
 
 	socket.on("findUser", (name) => {
-		console.log(name,'name');
-		let result = users.filter((user) => user.includes(name));
+		const {user,search} = name;
+		// first filter just filter user who is host and second for search
+		let result = users.filter(e => e != user).filter(e => e.includes(search));
 		socket.emit('findUser', result);
-	})
+	});
 
-	socket.on("findRoom", (name) => {
-		// console.log(chatRooms,'chatRoom');
-		// console.log(name,'name');
-		// console.log(chatRooms.filter((room) => room.name.includes(name)));
-		let result = chatRooms.filter((room) => room.name.includes(name));
-		// let result = chatRooms.filter((room) => room.id == id);
+	function same(arr1, arr2) {
+		if (arr1.length !== arr2.length) {
+		  return false;
+		}
+		const sortedArr1 = arr1.slice().sort();
+		const sortedArr2 = arr2.slice().sort();
+		for (let i = 0; i < sortedArr1.length; i++) {
+		  if (sortedArr1[i] !== sortedArr2[i]) {
+			return false;
+		  }
+		}
+		return true;
+	  }
+	// console.log(['ali','amir'].some(i=>i==['ali','amir'][0])&&['ali','amir'].some(i=>i==['ali','amir'][1]));
+	// console.log(same(['ali','amir'],['amir','ali']));
+	let Trooms = [
+		{
+		  id: '2qa2hpn5',
+		  users: [ 'ali', 'amir' ],
+		  messages: []
+		},
+		{
+		  id: 'fzs2ok5b',
+		  users: [ 'ali', 'hamid' ],
+		  messages: []
+		},
+		{
+		  id: 'aea9hm6z',
+		  users: [ 'reza', 'ali' ],
+		  messages: []
+		},
+		{
+		  id: 'aea9hm6z',
+		  users: [ 'hamid', 'reza' ],
+		  messages: []
+		}
+	  ];
+
+	  let b = [ 'hamid', 'reza' ]
+
+	//   console.log(Trooms.find(e=>same(e.users,b)).id);
+
+	socket.on("createRoom", (names) => {
+		if(names[0]==names[1]){
+			return
+		}else if(!!chatRooms.find(e=>same(e.users,names))){
+			return
+		}
+		const id = generateID();
+		socket.join(id);
+		chatRooms.unshift({ id: id, users:[...names], messages: [] });
+		socket.emit("roomsList", chatRooms);
+	});
+	
+	socket.on("findRoom", (names) => {
+		let result = chatRooms.find(e=>same(e.users,names));
+		// let result = chatRooms.filter((room) => room.users);
 		socket.emit("foundRoom", result);
-		// console.log("Messages Form", result[0].messages);
 	});
 
 	socket.on("newMessage", (data) => {
-		const { room_id, message, user, timestamp } = data;
-		let result = chatRooms.filter((room) => room.id == room_id);
+		const { names, message, user, timestamp } = data;
+		let result = chatRooms.find(e=>same(e.users,names));
 		const newMessage = {
 			id: generateID(),
 			text: message,
@@ -77,11 +127,11 @@ socketIO.on("connection", (socket) => {
 			time: `${timestamp.hour}:${timestamp.mins}`,
 		};
 		console.log("New Message", newMessage);
-		socket.to(result[0].name).emit("roomMessage", newMessage);
-		result[0].messages.push(newMessage);
-
-		socket.emit("roomsList", chatRooms);
-		socket.emit("foundRoom", result[0].messages);
+		console.log("result", result);
+		socket.to(result.id).emit("roomMessages", newMessage);
+		result.messages.push(newMessage);
+		// socket.emit("roomsList", chatRooms);
+		socket.emit("roomMessages", result.messages);
 	});
 
 	socket.on("disconnect", () => {
@@ -91,7 +141,7 @@ socketIO.on("connection", (socket) => {
 });
 
 app.get("/api", (req, res) => {
-	console.log('api called');
+	// console.log('api called');
 	return res.status(200).json(chatRooms);
 });
 
