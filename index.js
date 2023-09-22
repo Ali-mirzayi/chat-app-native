@@ -9,6 +9,7 @@ const isEqual = require('lodash.isequal');
 // const uniqby = require('lodash.uniqby');
 const uniqwith = require('lodash.uniqwith');
 const socketIO = new Server(server, {
+	maxHttpBufferSize: 1e8,
 	cors: {
 		origin: "*",
 		// [
@@ -109,19 +110,27 @@ socketIO.on("connection", (socket) => {
 	});
 
 	socket.on("newMessage", (data) => {
-		const { names, text, user, createdAt, id } = data;
+		const { names, ...message } = data;
 		const result = chatRooms.find(e => isEqual(e.users,names) || isEqual(e.users,names.reverse()));
 		const newMessage = {
-			_id: id,
-			text: text,
-			createdAt: createdAt,
-			user: user
+			_id: message?._id,
+			text: message?.text,
+			createdAt: message?.createdAt,
+			user: message?.user,
+			image: message?.image,
+			video: message?.video,
+			audio: message?.audio,
+			system: message?.system,
+			sent: message?.sent,
+			received: message?.received,
+			pending: message?.pending,
+			quickReplies: message?.quickReplies
 		  }
 		result.messages.push(newMessage);
 		socket.emit("newMessage", result.messages);
 		// socket.to(result.id).emit("newMessage", result.messages);
 		// console.log(result.messages,'result');
-		console.log(result.id,'id');
+		console.log(newMessage,'id newMessage');
 	});
 
 	socket.on("disconnect", () => {
@@ -137,7 +146,7 @@ app.get("/api", (req, res) => {
 
 app.post("/checkUser", (req, res) => {
 	const { Date ,...username } = req.body;
-	if(!!users.find(e=>e.name===username)){
+	if(!!users.find(e=>e.name===username.name)){
 		return res.status(400).json({isOK: false})
 	}else{
 		users.unshift(username);
