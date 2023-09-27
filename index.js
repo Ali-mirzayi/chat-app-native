@@ -35,48 +35,21 @@ const socketIO = new Server(server, {
 	}
 });
 
-// app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ extended: false }));
 app.use(cors());
 
 const generateID = () => Math.random().toString(36).substring(2, 10);
 let chatRooms = [];
 let users = [{_id: '1',name: 'ali mirzaei',avatar: ''}];
-console.log(users);
-// let users = [{_id: '1',name: 'ali mirzaei',avatar: ''}, {_id: '2',name: 'amir bahador',avatar: ''}, {_id: '3',name: 'maryam bahadori',avatar: ''},  {_id: '4',name: 'negar',avatar: ''}, {_id: '5',name: 'ariya akhash',avatar: ''}];
-
-// function cleanUpJson(arr) {
-// 	return arr.filter((arr, index, self) => (
-// 		index === self.findIndex((t) => (t.save === arr.save && t.State === arr.State))));
-// }
-
-// const room = [
-// 	{ id: "ariya", users: [{_id: '6',name: 'ariya akhash',avatar: ''}, {_id: '5',name: 'ali',avatar: ''}], messages: []},
-// 	{ id: "amirb", users: [{_id: '2',name: 'amir bahador',avatar: ''}, {_id: '5',name: 'ali',avatar: ''}], messages: []},
-// ]
-// { id: "aliismirzaei", users: [{_id: '1',name: "ali mirzaei",avatar: ""}, {_id: '5',name: 'ali',avatar: ''}], messages: [{_id: 'mirzaeiMessage',text: 'Hello and Welcome',createdAt: Date,user: {_id: '1',name: 'ali mirzaei',avatar: ''}}]},
-
-// const names2 = [{_id: '4',name: 'negar',avatar: ''},{_id: '5',name: 'ali',avatar: ''}]
-
-// console.log(uniqwith(room,v=> v.users[0]._id===names[0]._id || v.users[0]._id===names[1]._id).length===room.length);
-// console.log(uniqwith(room,v=> v.users[0]._id===names2[0]._id));
-// console.log();
 
 socketIO.on("connection", (socket) => {
 	console.log(`⚡: ${socket.id} user just connected!`);
-	// socket.on("createUser", (user) => {
-		// const { Date ,...username } = user;
-		// 	users.unshift(username);
-		// 	socket.emit("checkUser");
-		// }
-		// if (!chatRooms.find(e=>e.id === "aliismirzaei")){
-		// 	chatRooms.unshift(
-		// 		{ id: "aliismirzaei", users: [{_id: '1',name: 'ali mirzaei',avatar: ''}, username], messages: [{_id: 'mirzaeiMessage',text: 'Hello and Welcome',createdAt: Date,user: {_id: '1',name: 'ali mirzaei',avatar: ''}}]},
-		// 		{ id: "amirb", users: [{_id: '2',name: 'amir bahador',avatar: ''}, username], messages: []},
-		// 		{ id: "ariya", users: [{_id: '5',name: 'ariya akhash',avatar: ''}, username], messages: []},
-		// 		);
-		// }
-	// });
+	socket.on('sendMessage', (data) => {
+		const {roomId, ...newMessage} = data;
+		socketIO.in(roomId).emit('newMessage', newMessage);
+		const result = chatRooms.find(e => e.id===roomId);
+		result.messages.unshift(newMessage);
+		});
 
 	socket.on("findUser", (name) => {
 		const { user, search } = name;
@@ -89,48 +62,24 @@ socketIO.on("connection", (socket) => {
 	socket.on("createRoom", (names) => {
 		// first condition for check user cant create room with self
 		// second condition for check user cant create room !!again with another user
-		if (names[0]._id == names[1]._id) {
+		const firstName = names[0]._id;
+		const secondName = names[1]._id;
+		if (firstName == secondName) {
 			return
-		// }else if (uniqwith(chatRooms,v=>(isEqual(v.users,names) || isEqual(v.users,names.reverse()))).length!==chatRooms.length){
-		}else if (chatRooms.find(e => isEqual(e.users,names) || isEqual(e.users,names.reverse()))){
+		}else if (!!chatRooms.find(e => e.users[0]._id===firstName && e.users[1]._id===secondName || e.users[0]._id===secondName && e.users[1]._id===firstName )){
 			return
 		}
 		const id = generateID();
-		socket.join(id);
-		console.log(id,'id');
 		chatRooms.unshift({ id: id, users: names, messages: [] });
 		socket.emit("roomsList", chatRooms);
-		console.log("created room", chatRooms);
 	});
 
 	socket.on("findRoom", (names) => {
-		let result = chatRooms.find(e => isEqual(e.users,names) || isEqual(e.users,names.reverse()));
-		// console.log("found room");
-		socket.emit("findRoom", result.messages);
-	});
-
-	socket.on("newMessage", (data) => {
-		const { names, ...message } = data;
-		const result = chatRooms.find(e => isEqual(e.users,names) || isEqual(e.users,names.reverse()));
-		const newMessage = {
-			_id: message?._id,
-			text: message?.text,
-			createdAt: message?.createdAt,
-			user: message?.user,
-			image: message?.image,
-			video: message?.video,
-			audio: message?.audio,
-			system: message?.system,
-			sent: message?.sent,
-			received: message?.received,
-			pending: message?.pending,
-			quickReplies: message?.quickReplies
-		  }
-		result.messages.push(newMessage);
-		socket.emit("newMessage", result.messages);
-		// socket.to(result.id).emit("newMessage", result.messages);
-		// console.log(result.messages,'result');
-		console.log(newMessage,'id newMessage');
+		const firstName = names[0]._id;
+		const secondName = names[1]._id;
+		let result = chatRooms.find(e => e.users[0]._id===firstName && e.users[1]._id===secondName || e.users[0]._id===secondName && e.users[1]._id===firstName );
+		socket.join(result.id);
+		socket.emit("findRoomResponse", result);
 	});
 
 	socket.on("disconnect", () => {
