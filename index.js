@@ -71,7 +71,7 @@ socketIO.on("connection", (socket) => {
 		}
 		const id = generateID();
 		chatRooms.unshift({ id: id, users: names, messages: [] });
-		socket.emit("roomsList", chatRooms);
+		socketIO.in(id).emit("roomsList", chatRooms);
 	});
 
 	socket.on("findRoom", (names) => {
