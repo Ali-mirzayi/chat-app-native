@@ -8,6 +8,11 @@ const { Server } = require("socket.io");
 const isEqual = require('lodash.isequal');
 // const uniqby = require('lodash.uniqby');
 const uniqwith = require('lodash.uniqwith');
+const multer = require('multer');
+const upload = multer();
+// const fs = require('fs');
+// const upload = multer({ dest: 'uploads/' });
+
 const socketIO = new Server(server, {
 	maxHttpBufferSize: 1e8,
 	cors: {
@@ -41,15 +46,28 @@ app.use(cors());
 const generateID = () => Math.random().toString(36).substring(2, 10);
 let chatRooms = [];
 let users = [{_id: '1',name: 'ali mirzaei',avatar: ''}];
+let file="";
 
 socketIO.on("connection", (socket) => {
 	console.log(`⚡: ${socket.id} user just connected!`);
 	socket.on('sendMessage', (data) => {
 		const {roomId, ...newMessage} = data;
 		socketIO.in(roomId).emit('newMessage', newMessage);
-		const result = chatRooms.find(e => e.id===roomId);
-		result.messages.unshift(newMessage);
+		// const result = chatRooms.find(e => e.id===roomId);
+		// result.messages.unshift(newMessage);
 		});
+	
+		socket.on('sendImage', (data) => {
+			const {roomId, ...newMessage} = data;
+			console.log(file);
+			socketIO.in(roomId).emit('newMessage', {...newMessage,image:'data:image/jpeg;base64,'+file});
+			});
+
+			socket.on('sendVideo', (data) => {
+				const {roomId, ...newMessage} = data;
+				console.log(file);
+				socketIO.in(roomId).emit('newMessage', {...newMessage,video:'data:video/mp4;base64,'+file});
+			});		
 
 	socket.on("findUser", (name) => {
 		const { user, search } = name;
@@ -71,7 +89,7 @@ socketIO.on("connection", (socket) => {
 		}
 		const id = generateID();
 		chatRooms.unshift({ id: id, users: names, messages: [] });
-		socketIO.in(id).emit("roomsList", chatRooms);
+		socketIO.emit("roomsList", chatRooms);
 	});
 
 	socket.on("findRoom", (names) => {
@@ -91,6 +109,16 @@ socketIO.on("connection", (socket) => {
 app.get("/api", (req, res) => {
 	console.log('api called');
 	return res.status(200).json(chatRooms);
+});
+
+app.post("/upload", upload.any(),(req, res) => {
+	const uploadedFile = req.files;
+	// console.log(uploadedFile[0].buffer.toString('base64'));
+	file = uploadedFile[0].buffer.toString('base64');
+	console.log(file);
+
+	// res.send(uploadedFile[0].buffer.toString('base64'));
+	res.json({isok:"isok"})
 });
 
 app.post("/checkUser", (req, res) => {
