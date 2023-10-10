@@ -11,7 +11,20 @@ const uniqwith = require('lodash.uniqwith');
 const multer = require('multer');
 const upload = multer();
 // const fs = require('fs');
-// const upload = multer({ dest: 'uploads/' });
+// const storage = multer.diskStorage({ 
+// 	destination: 'uploads/',filename:function(req,file,cb){
+// 	cb(null,'media')
+// }});
+
+// const storage = multer.diskStorage({
+// 	destination:"/as",
+// 	filename:function(req,file,cb){
+// 			cb(null,'media')
+// 		}
+// });
+
+// const upload = multer({dest:'uploads/'});
+// const upload = multer({storage:storage});
 
 const socketIO = new Server(server, {
 	maxHttpBufferSize: 1e8,
@@ -59,8 +72,9 @@ socketIO.on("connection", (socket) => {
 	
 		socket.on('sendImage', (data) => {
 			const {roomId, ...newMessage} = data;
-			console.log(file);
 			socketIO.in(roomId).emit('newMessage', {...newMessage,image:'data:image/jpeg;base64,'+file});
+			// socket.to(roomId).emit('newMessage', {...newMessage,image:'data:image/jpeg;base64,'+file});
+			// socketIO.to(socket.id).emit('newMessage', {...newMessage,image:'data:image/jpeg;base64,'+file});
 			});
 
 			socket.on('sendVideo', (data) => {
@@ -113,12 +127,11 @@ app.get("/api", (req, res) => {
 
 app.post("/upload", upload.any(),(req, res) => {
 	const uploadedFile = req.files;
-	// console.log(uploadedFile[0].buffer.toString('base64'));
 	file = uploadedFile[0].buffer.toString('base64');
 	console.log(file);
 
 	// res.send(uploadedFile[0].buffer.toString('base64'));
-	res.json({isok:"isok"})
+	res.end("ok")
 });
 
 app.post("/checkUser", (req, res) => {
