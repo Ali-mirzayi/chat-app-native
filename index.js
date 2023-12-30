@@ -68,27 +68,30 @@ socketIO.on("connection", (socket) => {
 		socketIO.in(roomId).emit('newMessage', newMessage);
 		// const result = chatRooms.find(e => e.id===roomId);
 		// result.messages.unshift(newMessage);
-		});
+		// console.log(newMessage,'img');
+	});
 	
-		socket.on('sendImage', (data) => {
-			const {roomId, ...newMessage} = data;
-			socketIO.in(roomId).emit('newMessage', {...newMessage,image:'data:image/jpeg;base64,'+file});
+	socket.on('sendImage', (data) => {
+		const {roomId, ...newMessage} = data;
+		socketIO.in(roomId).emit('newMessage', {...newMessage,image:file});
+		// console.log(file,'img');
 			// socket.to(roomId).emit('newMessage', {...newMessage,image:'data:image/jpeg;base64,'+file});
 			// socketIO.to(socket.id).emit('newMessage', {...newMessage,image:'data:image/jpeg;base64,'+file});
 			});
 
 			socket.on('sendVideo', (data) => {
 				const {roomId, ...newMessage} = data;
-				console.log(file);
-				socketIO.in(roomId).emit('newMessage', {...newMessage,video:'data:video/mp4;base64,'+file});
+				// console.log(file);
+				socketIO.in(roomId).emit('newMessage', {...newMessage,video:file});
 			});		
 
 	socket.on("findUser", (name) => {
 		const { user, search } = name;
 		// first filter just filter user who is host and second for search
 		let result = users.filter(e => e._id !== user._id).filter(e => e.name.includes(search));
+		console.log(result);
 		socket.emit('findUser', result);
-		// console.log(result, 'findUser');
+		// console.log(result, 'findUser');//
 	});
 
 	socket.on("createRoom", (names) => {
@@ -128,21 +131,30 @@ app.get("/api", (req, res) => {
 app.post("/upload", upload.any(),(req, res) => {
 	const uploadedFile = req.files;
 	file = uploadedFile[0].buffer.toString('base64');
-	console.log(file);
+	const chunks = uploadedFile[0].size / 100000;
+	// for()
+
 
 	// res.send(uploadedFile[0].buffer.toString('base64'));
 	res.end("ok")
 });
 
-app.post("/checkUser", (req, res) => {
-	const { Date ,...username } = req.body;
-	if(!!users.find(e=>e.name===username.name)){
+app.post("/deleteUser", (req, res) => {
+	console.log(req.body.name);
+	users=users.filter(e=>e._id!==req.body.id);
+	chatRooms=chatRooms.filter(e=>e.users[1]._id!==req.body.id && e.users[0]._id!==req.body.id);
+});
+
+app.post("/checkUserToAdd", (req, res) => {
+	if(!!users.find(e=>e.name===req.body.name)){
 		return res.status(400).json({isOK: false})
 	}else{
-		users.unshift(username);
+		users.unshift(req.body);
+		// console.log(users);
 		return res.status(200).json({isOK: true});
 	}
 });
+
 
 app.get("/", (req, res) => {
 	return res.status(200).send('welcoooooooooooooooooome');
