@@ -5,50 +5,14 @@ const server = http.createServer(app);
 const cors = require("cors");
 const PORT = 4000;
 const { Server } = require("socket.io");
-const isEqual = require('lodash.isequal');
-// const uniqby = require('lodash.uniqby');
-const uniqwith = require('lodash.uniqwith');
 const multer = require('multer');
 const upload = multer();
-// const fs = require('fs');
-// const storage = multer.diskStorage({ 
-// 	destination: 'uploads/',filename:function(req,file,cb){
-// 	cb(null,'media')
-// }});
-
-// const storage = multer.diskStorage({
-// 	destination:"/as",
-// 	filename:function(req,file,cb){
-// 			cb(null,'media')
-// 		}
-// });
-
-// const upload = multer({dest:'uploads/'});
-// const upload = multer({storage:storage});
+const uniq = require('lodash.uniqby');
 
 const socketIO = new Server(server, {
 	maxHttpBufferSize: 1e8,
 	cors: {
 		origin: "*",
-		// [
-			// "http://localhost:3000",
-			// "http://localhost:8081",
-			// "http://localhost:4000",
-			// "http://127.0.0.1:3000",
-			// "http://127.0.0.1:8081",
-			// "http://127.0.0.1:4000",
-			// "http://10.0.2.2",
-			// "http://10.0.2.2:8081",
-			// "http://10.0.2.2:3000",
-			// "http://10.0.2.2:4000",
-			// "http://192.168.69.34:8081",
-			// "http://192.168.69.34:3000",
-			// "http://192.168.69.34:4000",
-			// "http://135.125.113.241:3000",
-			// "http://135.125.113.241:8081",
-			// "http://135.125.113.241:4000",
-			// "http://135.125.113.241",
-		// ],
 		methods: ["GET", "POST"]
 	}
 });
@@ -58,40 +22,34 @@ app.use(cors());
 
 const generateID = () => Math.random().toString(36).substring(2, 10);
 let chatRooms = [];
-let users = [{_id: '1',name: 'ali mirzaei',avatar: ''}];
-let file="";
+let users = [{ _id: '1', name: 'ali mirzaei', avatar: '' }];
+let onlineUsers = [];
+
+let file = "";
 
 socketIO.on("connection", (socket) => {
 	console.log(`⚡: ${socket.id} user just connected!`);
-	socket.on('sendMessage', (data) => {
-		const {roomId, ...newMessage} = data;
-		socketIO.in(roomId).emit('newMessage', newMessage);
-		// const result = chatRooms.find(e => e.id===roomId);
-		// result.messages.unshift(newMessage);
-		// console.log(newMessage,'img');
-	});
-	
-	socket.on('sendImage', (data) => {
-		const {roomId, ...newMessage} = data;
-		socketIO.in(roomId).emit('newMessage', {...newMessage,image:file});
-		// console.log(file,'img');
-			// socket.to(roomId).emit('newMessage', {...newMessage,image:'data:image/jpeg;base64,'+file});
-			// socketIO.to(socket.id).emit('newMessage', {...newMessage,image:'data:image/jpeg;base64,'+file});
-			});
 
-			socket.on('sendVideo', (data) => {
-				const {roomId, ...newMessage} = data;
-				// console.log(file);
-				socketIO.in(roomId).emit('newMessage', {...newMessage,video:file});
-			});		
+	socket.on('sendMessage', (data) => {
+		const { roomId, ...newMessage } = data;
+		socketIO.in(roomId).emit('newMessage', newMessage);
+	});
+
+	socket.on('sendImage', (data) => {
+		const { roomId, ...newMessage } = data;
+		socketIO.in(roomId).emit('newMessage', { ...newMessage, image: file });
+	});
+
+	socket.on('sendVideo', (data) => {
+		const { roomId, ...newMessage } = data;
+		socketIO.in(roomId).emit('newMessage', { ...newMessage, video: file });
+	});
 
 	socket.on("findUser", (name) => {
 		const { user, search } = name;
 		// first filter just filter user who is host and second for search
 		let result = users.filter(e => e._id !== user._id).filter(e => e.name.includes(search));
-		console.log(result);
 		socket.emit('findUser', result);
-		// console.log(result, 'findUser');//
 	});
 
 	socket.on("createRoom", (names) => {
@@ -101,7 +59,7 @@ socketIO.on("connection", (socket) => {
 		const secondName = names[1]._id;
 		if (firstName == secondName) {
 			return
-		}else if (!!chatRooms.find(e => e.users[0]._id===firstName && e.users[1]._id===secondName || e.users[0]._id===secondName && e.users[1]._id===firstName )){
+		} else if (!!chatRooms.find(e => e.users[0]._id === firstName && e.users[1]._id === secondName || e.users[0]._id === secondName && e.users[1]._id === firstName)) {
 			return
 		}
 		const id = generateID();
@@ -112,12 +70,37 @@ socketIO.on("connection", (socket) => {
 	socket.on("findRoom", (names) => {
 		const firstName = names[0]._id;
 		const secondName = names[1]._id;
-		let result = chatRooms.find(e => e.users[0]._id===firstName && e.users[1]._id===secondName || e.users[0]._id===secondName && e.users[1]._id===firstName );
+		let result = chatRooms.find(e => e.users[0]._id === firstName && e.users[1]._id === secondName || e.users[0]._id === secondName && e.users[1]._id === firstName);
 		socket.join(result.id);
 		socket.emit("findRoomResponse", result);
 	});
 
+	socket.on("setStatus", (res) => {
+		onlineUsers.unshift(res);
+		onlineUsers = uniq(onlineUsers, 'name');
+	});
+
+	socket.on("checkStatus", (contact) => {
+		console.log(onlineUsers,'onlineUsers');
+		console.log(onlineUsers.find(e => e.name === contact), 'filter1');
+		// console.log(socket.rooms.has(`${onlineUsers.find(e => e.name === contact)?.id}`), 'filter2');
+		console.log(!!onlineUsers.find(e => e.name === contact)?.id,'stadus');
+		socketIO.emit("checkStatusResponse", { 'status': !!onlineUsers.find(e => e.name === contact)?.id, 'name': contact });
+	});
+
+	// socket.on("checkStatus", (res) => {
+	// 	const {contact , ...data } = res
+	// 	onlineUsers.unshift(data);
+	// 	onlineUsers = uniq(onlineUsers, 'name')
+	// 	console.log(onlineUsers.find(e=>e.name === contact)?.id,'filter1');
+	// 	console.log(onlineUsers.filter(e=>e.name === contact),'filter2');
+	// 	socket.emit("checkStatusResponse", { 'status': socket.rooms.has(`${onlineUsers.find(e=>e.name === contact)?.id}`), 'name': data.name });
+	// 	// socket.emit("checkStatusResponse", !!users.find(e=>e._id===id));
+	// 	// console.log(socket.connected['nkidQAR9XNsTNPfqAAAH'],'connecteddd');
+	// });
+
 	socket.on("disconnect", () => {
+		onlineUsers = onlineUsers.filter(e=>e.id !== socket.id);
 		socket.disconnect(socket);
 		console.log(`🔥: ${socket.id} user disconnected`);
 	});
@@ -128,7 +111,7 @@ app.get("/api", (req, res) => {
 	return res.status(200).json(chatRooms);
 });
 
-app.post("/upload", upload.any(),(req, res) => {
+app.post("/upload", upload.any(), (req, res) => {
 	const uploadedFile = req.files;
 	file = uploadedFile[0].buffer.toString('base64');
 	const chunks = uploadedFile[0].size / 100000;
@@ -139,19 +122,25 @@ app.post("/upload", upload.any(),(req, res) => {
 	res.end("ok")
 });
 
+app.post("/uploads", upload.any(), (req, res) => {
+	console.log(req.files, 'files');
+	console.log(req.file, 'file');
+	res.end("ok")
+});
+
 app.post("/deleteUser", (req, res) => {
 	console.log(req.body.name);
-	users=users.filter(e=>e._id!==req.body.id);
-	chatRooms=chatRooms.filter(e=>e.users[1]._id!==req.body.id && e.users[0]._id!==req.body.id);
+	users = users.filter(e => e._id !== req.body.id);
+	chatRooms = chatRooms.filter(e => e.users[1]._id !== req.body.id && e.users[0]._id !== req.body.id);
 });
 
 app.post("/checkUserToAdd", (req, res) => {
-	if(!!users.find(e=>e.name===req.body.name)){
-		return res.status(400).json({isOK: false})
-	}else{
+	if (!!users.find(e => e.name === req.body.name)) {
+		return res.status(400).json({ isOK: false })
+	} else {
 		users.unshift(req.body);
-		// console.log(users);
-		return res.status(200).json({isOK: true});
+		console.log(users);
+		return res.status(200).json({ isOK: true });
 	}
 });
 
