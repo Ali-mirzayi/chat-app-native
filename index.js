@@ -75,29 +75,23 @@ socketIO.on("connection", (socket) => {
 		socket.emit("findRoomResponse", result);
 	});
 
-	socket.on("setStatus", (res) => {
+	socket.on("isUserInRoom",(data)=>{
+		if(data.status===true){
+			socket.broadcast.emit("isUserInRoomResponse", {'status':true,'name':data.user});
+		}else{
+			socket.broadcast.emit("isUserInRoomResponse", {'status':false,'name':data.user})
+		}
+	})
+
+	// set id and usename object exp: (res) == { 'id': 'adsxc213', 'name': 'ali'}
+	socket.on("setSocketId", (res) => {
 		onlineUsers.unshift(res);
 		onlineUsers = uniq(onlineUsers, 'name');
 	});
 
 	socket.on("checkStatus", (contact) => {
-		console.log(onlineUsers,'onlineUsers');
-		console.log(onlineUsers.find(e => e.name === contact), 'filter1');
-		// console.log(socket.rooms.has(`${onlineUsers.find(e => e.name === contact)?.id}`), 'filter2');
-		console.log(!!onlineUsers.find(e => e.name === contact)?.id,'stadus');
 		socketIO.emit("checkStatusResponse", { 'status': !!onlineUsers.find(e => e.name === contact)?.id, 'name': contact });
 	});
-
-	// socket.on("checkStatus", (res) => {
-	// 	const {contact , ...data } = res
-	// 	onlineUsers.unshift(data);
-	// 	onlineUsers = uniq(onlineUsers, 'name')
-	// 	console.log(onlineUsers.find(e=>e.name === contact)?.id,'filter1');
-	// 	console.log(onlineUsers.filter(e=>e.name === contact),'filter2');
-	// 	socket.emit("checkStatusResponse", { 'status': socket.rooms.has(`${onlineUsers.find(e=>e.name === contact)?.id}`), 'name': data.name });
-	// 	// socket.emit("checkStatusResponse", !!users.find(e=>e._id===id));
-	// 	// console.log(socket.connected['nkidQAR9XNsTNPfqAAAH'],'connecteddd');
-	// });
 
 	socket.on("disconnect", () => {
 		onlineUsers = onlineUsers.filter(e=>e.id !== socket.id);
