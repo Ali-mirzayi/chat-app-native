@@ -7,6 +7,7 @@ const PORT = 4000;
 const { Server } = require("socket.io");
 const multer = require('multer');
 const upload = multer();
+const { Expo } = require('expo-server-sdk')
 const uniq = require('lodash.uniqby');
 
 const socketIO = new Server(server, {
@@ -20,10 +21,13 @@ const socketIO = new Server(server, {
 app.use(express.json({ extended: false }));
 app.use(cors());
 
+const expo = new Expo();
+
 const generateID = () => Math.random().toString(36).substring(2, 10);
 let chatRooms = [];
 let users = [{ _id: '1', name: 'ali mirzaei', avatar: '' }];
 let onlineUsers = [];
+let ExpoPushToken = [];
 
 let file = "";
 
@@ -75,11 +79,11 @@ socketIO.on("connection", (socket) => {
 		socket.emit("findRoomResponse", result);
 	});
 
-	socket.on("isUserInRoom",(data)=>{
-		if(data.status===true){
-			socket.broadcast.emit("isUserInRoomResponse", {'status':true,'name':data.user});
-		}else{
-			socket.broadcast.emit("isUserInRoomResponse", {'status':false,'name':data.user})
+	socket.on("isUserInRoom", (data) => {
+		if (data.status === true) {
+			socket.broadcast.emit("isUserInRoomResponse", { 'status': true, 'name': data.user });
+		} else {
+			socket.broadcast.emit("isUserInRoomResponse", { 'status': false, 'name': data.user })
 		}
 	})
 
@@ -94,7 +98,7 @@ socketIO.on("connection", (socket) => {
 	});
 
 	socket.on("disconnect", () => {
-		onlineUsers = onlineUsers.filter(e=>e.id !== socket.id);
+		onlineUsers = onlineUsers.filter(e => e.id !== socket.id);
 		socket.disconnect(socket);
 		console.log(`🔥: ${socket.id} user disconnected`);
 	});
@@ -119,7 +123,7 @@ app.post("/upload", upload.any(), (req, res) => {
 app.post("/uploads", upload.any(), (req, res) => {
 	console.log(req.files, 'files');
 	console.log(req.file, 'file');
-	res.end("ok")
+	res.end("ok");
 });
 
 app.post("/deleteUser", (req, res) => {
@@ -138,6 +142,21 @@ app.post("/checkUserToAdd", (req, res) => {
 	}
 });
 
+app.post("/sendPushNotifications", async(req, res) => {
+	const {name,message,token} = req.body;
+	if (!Expo.isExpoPushToken(token)) {
+		console.error(`Push token ${token} is not a valid Expo push token`);
+		return res.status(400).end(`Push token ${token} is not a valid Expo push token`)
+	  }
+	let ticket = await expo.sendPushNotificationsAsync([{
+		to: token,
+		title: name,
+		body: message,
+	}]);
+	console.log(ticket,'tickett');
+	console.log(ticket[0].status,'statuss');
+	return res.status(200).end(`Push token ${token} is success`)
+});
 
 app.get("/", (req, res) => {
 	return res.status(200).send('welcoooooooooooooooooome');
