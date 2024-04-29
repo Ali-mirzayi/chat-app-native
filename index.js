@@ -25,9 +25,8 @@ const expo = new Expo();
 
 const generateID = () => Math.random().toString(36).substring(2, 10);
 let chatRooms = [];
-let users = [{ _id: '1', name: 'ali mirzaei', avatar: '' }];
+let users = [{ _id: '1', name: 'ali mirzaei', avatar: '', token: 'ExponentPushToken[itsAli]' }];
 let onlineUsers = [];
-let ExpoPushToken = [];
 
 let file = "";
 
@@ -91,6 +90,7 @@ socketIO.on("connection", (socket) => {
 	socket.on("setSocketId", (res) => {
 		onlineUsers.unshift(res);
 		onlineUsers = uniq(onlineUsers, 'name');
+		console.log(onlineUsers,'onlineUsers');
 	});
 
 	socket.on("checkStatus", (contact) => {
@@ -142,20 +142,38 @@ app.post("/checkUserToAdd", (req, res) => {
 	}
 });
 
-app.post("/sendPushNotifications", async(req, res) => {
-	const {name,message,token} = req.body;
+app.post("/sendPushNotifications", async (req, res) => {
+	const { name, message, token } = req.body;
 	if (!Expo.isExpoPushToken(token)) {
 		console.error(`Push token ${token} is not a valid Expo push token`);
-		return res.status(400).end(`Push token ${token} is not a valid Expo push token`)
-	  }
-	let ticket = await expo.sendPushNotificationsAsync([{
-		to: token,
-		title: name,
-		body: message,
-	}]);
-	console.log(ticket,'tickett');
-	console.log(ticket[0].status,'statuss');
-	return res.status(200).end(`Push token ${token} is success`)
+		return res.status(400).json({data:`Push token ${token} is not a valid Expo push token`})
+	}
+	try{
+		let ticket = await expo.sendPushNotificationsAsync([{
+			to: token,
+			title: name,
+			body: message,
+		}]);
+		return res.status(200).json({status:ticket[0].status})
+	}catch(err){
+		return res.status(400).kson({status:`Error NetWork error (no notif) ${err}`})
+	}
+});
+
+app.post("/newModifiedUser", async (req, res) => {
+	const newUser = req.body.user;
+	try{
+		users = users.map(user => {
+			if (user._id === newUser._id) {
+			  return newUser;
+			} else {
+			  return user;
+			}
+		  });
+		return res.status(200).json({status:`User is update ${newUser}`})
+	}catch(err){
+		return res.status(400).kson({status:`Error to Update User ${err}`})
+	}
 });
 
 app.get("/", (req, res) => {
