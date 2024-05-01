@@ -90,7 +90,7 @@ socketIO.on("connection", (socket) => {
 	socket.on("setSocketId", (res) => {
 		onlineUsers.unshift(res);
 		onlineUsers = uniq(onlineUsers, 'name');
-		console.log(onlineUsers,'onlineUsers');
+		console.log(onlineUsers, 'onlineUsers');
 	});
 
 	socket.on("checkStatus", (contact) => {
@@ -105,7 +105,6 @@ socketIO.on("connection", (socket) => {
 });
 
 app.get("/api", (req, res) => {
-	console.log('api called');
 	return res.status(200).json(chatRooms);
 });
 
@@ -120,14 +119,7 @@ app.post("/upload", upload.any(), (req, res) => {
 	res.end("ok")
 });
 
-app.post("/uploads", upload.any(), (req, res) => {
-	console.log(req.files, 'files');
-	console.log(req.file, 'file');
-	res.end("ok");
-});
-
-app.post("/deleteUser", (req, res) => {
-	console.log(req.body.name);
+app.post("/deleteUser", (req) => {
 	users = users.filter(e => e._id !== req.body.id);
 	chatRooms = chatRooms.filter(e => e.users[1]._id !== req.body.id && e.users[0]._id !== req.body.id);
 });
@@ -137,46 +129,50 @@ app.post("/checkUserToAdd", (req, res) => {
 		return res.status(400).json({ isOK: false })
 	} else {
 		users.unshift(req.body);
-		console.log(users);
+		// console.log(users);
 		return res.status(200).json({ isOK: true });
 	}
 });
 
 app.post("/sendPushNotifications", async (req, res) => {
-	const { name, message, token } = req.body;
+	const { user, message, token,roomId } = req.body;
+	console.log(req.body)
 	if (!Expo.isExpoPushToken(token)) {
 		console.error(`Push token ${token} is not a valid Expo push token`);
-		return res.status(400).json({data:`Push token ${token} is not a valid Expo push token`})
+		return res.status(400).json({ data: `Push token ${token} is not a valid Expo push token` })
 	}
-	try{
+	try {
 		let ticket = await expo.sendPushNotificationsAsync([{
 			to: token,
-			title: name,
+			title: user.name,
 			body: message,
+			ttl: 172800, //2d
+			priority: "normal",
+			data: { user,roomId }
 		}]);
-		return res.status(200).json({status:ticket[0].status})
-	}catch(err){
-		return res.status(400).kson({status:`Error NetWork error (no notif) ${err}`})
+		return res.status(200).json({ status: ticket[0].status })
+	} catch (err) {
+		return res.status(400).kson({ status: `Error NetWork error (no notif) ${err}` })
 	}
 });
 
-app.post("/newModifiedUser", async (req, res) => {
+app.post("/updateUser", async (req, res) => {
 	const newUser = req.body.user;
-	try{
+	try {
 		users = users.map(user => {
 			if (user._id === newUser._id) {
-			  return newUser;
+				return newUser;
 			} else {
-			  return user;
+				return user;
 			}
-		  });
-		return res.status(200).json({status:`User is update ${newUser}`})
-	}catch(err){
-		return res.status(400).kson({status:`Error to Update User ${err}`})
+		});
+		return res.status(200).json({ status: `User is update ${newUser}` })
+	} catch (err) {
+		return res.status(400).kson({ status: `Error to Update User ${err}` })
 	}
 });
 
-app.get("/", (req, res) => {
+app.get("/", (_, res) => {
 	return res.status(200).send('welcoooooooooooooooooome');
 });
 
