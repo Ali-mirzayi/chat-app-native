@@ -4,9 +4,26 @@ const http = require('http');
 const server = http.createServer(app);
 const cors = require("cors");
 const PORT = 4000;
+var path = require('path');
+const fs = require('fs');
 const { Server } = require("socket.io");
 const multer = require('multer');
-const upload = multer();
+const storage = multer.diskStorage({
+	destination: 'uploads/',
+	filename: function (req, file, cb) {
+		cb(null, Date.now() + path.extname(file.originalname)) //Appending extension
+	}
+});
+
+const upload = multer({ storage });
+
+// use for tumbnail
+const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
+const ffmpeg = require("fluent-ffmpeg");
+ffmpeg.setFfmpegPath(ffmpegPath);
+
+const sharp = require('sharp');
+
 const { Expo } = require('expo-server-sdk')
 const uniq = require('lodash.uniqby');
 
@@ -29,23 +46,43 @@ let users = [{ _id: '1', name: 'ali mirzaei', avatar: '', token: 'ExponentPushTo
 let onlineUsers = [];
 
 let file = "";
+let imgPath = "";
 
 socketIO.on("connection", (socket) => {
 	console.log(`⚡: ${socket.id} user just connected!`);
-
 	socket.on('sendMessage', (data) => {
 		const { roomId, ...newMessage } = data;
-		socketIO.in(roomId).emit('newMessage', newMessage);
+		socket.in(roomId).emit('newMessage', newMessage);
+		// socketIO.in(roomId).emit('newMessage', newMessage);
 	});
 
 	socket.on('sendImage', (data) => {
 		const { roomId, ...newMessage } = data;
-		socketIO.in(roomId).emit('newMessage', { ...newMessage, image: file });
+		fs.readFile(imgPath, (err, data) => {
+			if (err) {
+				console.error(err);
+				return res.status(500).send("Error reading file");
+			}
+		
+			sharp(data).jpeg({ quality: 5 }).toBuffer()
+				.then(reducedData => {
+					const base64Data = Buffer.from(reducedData).toString('base64');
+					// file = base64Data;
+					socket.in(roomId).emit('newMessage', { ...newMessage, image: base64Data });
+					// file = reducedData.toString('base64');
+				}).catch(err => {
+					console.error(err);
+					return res.status(500).send("Error processing image");
+			});
+		});
+		// if (file !== "") {
+			// socket.in(roomId).emit('newMessage', { ...newMessage, image: file });
+		// }
 	});
 
 	socket.on('sendVideo', (data) => {
 		const { roomId, ...newMessage } = data;
-		socketIO.in(roomId).emit('newMessage', { ...newMessage, video: file });
+		socket.in(roomId).emit('newMessage', { ...newMessage, video: file });
 	});
 
 	socket.on("findUser", (name) => {
@@ -90,7 +127,6 @@ socketIO.on("connection", (socket) => {
 	socket.on("setSocketId", (res) => {
 		onlineUsers.unshift(res);
 		onlineUsers = uniq(onlineUsers, 'name');
-		console.log(onlineUsers, 'onlineUsers');
 	});
 
 	socket.on("checkStatus", (contact) => {
@@ -109,19 +145,65 @@ app.get("/api", (req, res) => {
 });
 
 app.post("/upload", upload.any(), (req, res) => {
-	const uploadedFile = req.files;
-	file = uploadedFile[0].buffer.toString('base64');
-	const chunks = uploadedFile[0].size / 100000;
+	const uploadedFile = req.files[0];
+	const filePath = uploadedFile.path;
+	imgPath = filePath;
+
+	// console.log(uploadedFile);
+
+	if (uploadedFile.mimetype.includes("video")) {
+		ffmpeg({
+			source: filePath,
+		}).takeScreenshots({
+			filename: `${Date.now()}.jpg`,
+			timemarks: [10],
+			folder: "uploads/",
+		});
+	}
+
+	// fs.readFile(filePath, (err, data) => {
+	// 	if (err) {
+	// 		console.error(err);
+	// 		return res.status(500).send("Error reading file");
+	// 	}
+	
+	// 	sharp(data).jpeg({ quality: 5 }).toBuffer()
+	// 		.then(reducedData => {
+	// 			const base64Data = Buffer.from(reducedData).toString('base64');
+	// 			file = base64Data;
+	// 			// file = reducedData.toString('base64');
+	// 		}).catch(err => {
+	// 			console.error(err);
+	// 			return res.status(500).send("Error processing image");
+	// 	});
+	// });
+	// fs.readFile(filePath, (err, data) => {
+	// 	if (err) {
+	// 		console.error(err);
+	// 		return res.status(500).send("Error reading file");
+	// 	}
+
+	// 	const base64Data = Buffer.from(data).toString('base64');
+
+
+	// 	file = base64Data;
+
+	// 	// fs.unlink(filePath, (err) => {
+	// 	//     if (err) {
+	// 	//         console.error(err);
+	// 	//     }
+	// 	// });
+	// });
+	// file = uploadedFile.buffer.toString('base64');
+	// const chunks = uploadedFile[0].size / 100000;
 	// for()
-
-
 	// res.send(uploadedFile[0].buffer.toString('base64'));
 	res.end("ok")
 });
 
 app.post("/deleteUser", (req) => {
-	users = users.filter(e => e._id !== req.body.id);
-	chatRooms = chatRooms.filter(e => e.users[1]._id !== req.body.id && e.users[0]._id !== req.body.id);
+	users = users.filter(e => e._id !== req.body._id);
+	chatRooms = chatRooms.filter(e => e.users[1]._id !== req.body._id && e.users[0]._id !== req.body._id);
 });
 
 app.post("/checkUserToAdd", (req, res) => {
@@ -135,7 +217,7 @@ app.post("/checkUserToAdd", (req, res) => {
 });
 
 app.post("/sendPushNotifications", async (req, res) => {
-	const { user, message, token,roomId } = req.body;
+	const { user, message, token, roomId } = req.body;
 	console.log(req.body)
 	if (!Expo.isExpoPushToken(token)) {
 		console.error(`Push token ${token} is not a valid Expo push token`);
@@ -148,11 +230,11 @@ app.post("/sendPushNotifications", async (req, res) => {
 			body: message,
 			ttl: 172800, //2d
 			priority: "normal",
-			data: { user,roomId }
+			data: { user, roomId }
 		}]);
 		return res.status(200).json({ status: ticket[0].status })
 	} catch (err) {
-		return res.status(400).kson({ status: `Error NetWork error (no notif) ${err}` })
+		return res.status(400).json({ status: `Error NetWork error (no notif) ${err}` })
 	}
 });
 
@@ -173,7 +255,7 @@ app.post("/updateUser", async (req, res) => {
 });
 
 app.get("/", (_, res) => {
-	return res.status(200).send('welcoooooooooooooooooome');
+	return res.status(200).send('welcome version 1.0.2 mirzagram');
 });
 
 server.listen(PORT, () => {
