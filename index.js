@@ -17,9 +17,16 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
+
+// const ffmpegPath = "/usr/bin/ffmpeg";
+// const ffmpeg = require("./node_modules/fluent-ffmpeg/index");
+// ffmpeg.setFfmpegPath(ffmpegPath);
+
+
 // use for tumbnail
-const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
-const ffmpeg = require("fluent-ffmpeg");
+const ffmpegPath = require("./node_modules/@ffmpeg-installer/ffmpeg/index").path;
+// const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
+const ffmpeg = require("./node_modules/fluent-ffmpeg/index");
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const sharp = require('sharp');
@@ -37,6 +44,7 @@ const socketIO = new Server(server, {
 
 app.use(express.json({ extended: false }));
 app.use(cors());
+app.use('/uploads', express.static('uploads'));
 
 const expo = new Expo();
 
@@ -45,8 +53,13 @@ let chatRooms = [];
 let users = [{ _id: '1', name: 'ali mirzaei', avatar: '', token: 'ExponentPushToken[itsAli]' }];
 let onlineUsers = [];
 
-let file = "";
-let imgPath = "";
+let filePath = "";
+
+app.post("/upload", upload.any(), (req, res) => {
+	const uploadedFile = req.files[0];
+	filePath = uploadedFile.path;
+	res.end("ok");
+});
 
 socketIO.on("connection", (socket) => {
 	console.log(`⚡: ${socket.id} user just connected!`);
@@ -58,37 +71,59 @@ socketIO.on("connection", (socket) => {
 
 	socket.on('sendImage', (data) => {
 		const { roomId, ...newMessage } = data;
-		fs.readFile(imgPath, (err, data) => {
+		fs.readFile(filePath, (err, data) => {
 			if (err) {
 				console.error(err);
 				return res.status(500).send("Error reading file");
-			}
-		
+			};
+
 			sharp(data).jpeg({ quality: 5 }).toBuffer()
 				.then(reducedData => {
 					const base64Data = Buffer.from(reducedData).toString('base64');
-					// file = base64Data;
-					socket.in(roomId).emit('newMessage', { ...newMessage, image: base64Data });
-					// file = reducedData.toString('base64');
+					socket.in(roomId).emit('newMessage', { ...newMessage, image: filePath, preView: base64Data });
 				}).catch(err => {
 					console.error(err);
 					return res.status(500).send("Error processing image");
-			});
+				});
 		});
-		// if (file !== "") {
-			// socket.in(roomId).emit('newMessage', { ...newMessage, image: file });
-		// }
 	});
 
-	socket.on('sendVideo', (data) => {
+	socket.on('sendVideo', async (data) => {
 		const { roomId, ...newMessage } = data;
-		socket.in(roomId).emit('newMessage', { ...newMessage, video: file });
+		if (filePath !== "") {
+			const filename = `${Date.now()}.jpg`;
+			ffmpeg({
+				source: filePath,
+			}).on('end', () => {
+				fs.readFile(filePath, (err, data) => {
+					if (err) {
+						console.error(err);
+						return res.status(500).send("Error reading file");
+					};
+				});
+				sharp(`uploads/${filename}`).jpeg({ quality: 5 }).toBuffer()
+					.then(reducedData => {
+						const base64Data = Buffer.from(reducedData).toString('base64');
+						socket.in(roomId).emit('newMessage', { ...newMessage, video: filePath, thumbnail: base64Data })
+					}).catch(err => {
+						console.error(err);
+						return res.status(500).send("Error processing image");
+					});
+			}).takeScreenshots({
+				filename,
+				timemarks: [10],
+				folder: "uploads/",
+			});
+		} else {
+			console.log('Upload not finished yet');
+		}
 	});
 
 	socket.on("findUser", (name) => {
 		const { user, search } = name;
 		// first filter just filter user who is host and second for search
-		let result = users.filter(e => e._id !== user._id).filter(e => e.name.includes(search));
+		let result = users.filter(e => e.name.includes(search)).filter(e => e.name !== user.name);
+		// let result = users.filter(e => e._id !== user._id).filter(e => e.name.includes(search));
 		socket.emit('findUser', result);
 	});
 
@@ -111,7 +146,11 @@ socketIO.on("connection", (socket) => {
 		const firstName = names[0]._id;
 		const secondName = names[1]._id;
 		let result = chatRooms.find(e => e.users[0]._id === firstName && e.users[1]._id === secondName || e.users[0]._id === secondName && e.users[1]._id === firstName);
-		socket.join(result.id);
+		try {
+			socket.join(result.id);
+		} catch (err) {
+			console.log('error to join room', err)
+		}
 		socket.emit("findRoomResponse", result);
 	});
 
@@ -144,62 +183,16 @@ app.get("/api", (req, res) => {
 	return res.status(200).json(chatRooms);
 });
 
-app.post("/upload", upload.any(), (req, res) => {
-	const uploadedFile = req.files[0];
-	const filePath = uploadedFile.path;
-	imgPath = filePath;
-
-	// console.log(uploadedFile);
-
-	if (uploadedFile.mimetype.includes("video")) {
-		ffmpeg({
-			source: filePath,
-		}).takeScreenshots({
-			filename: `${Date.now()}.jpg`,
-			timemarks: [10],
-			folder: "uploads/",
-		});
-	}
-
-	// fs.readFile(filePath, (err, data) => {
-	// 	if (err) {
-	// 		console.error(err);
-	// 		return res.status(500).send("Error reading file");
-	// 	}
-	
-	// 	sharp(data).jpeg({ quality: 5 }).toBuffer()
-	// 		.then(reducedData => {
-	// 			const base64Data = Buffer.from(reducedData).toString('base64');
-	// 			file = base64Data;
-	// 			// file = reducedData.toString('base64');
-	// 		}).catch(err => {
-	// 			console.error(err);
-	// 			return res.status(500).send("Error processing image");
-	// 	});
-	// });
-	// fs.readFile(filePath, (err, data) => {
-	// 	if (err) {
-	// 		console.error(err);
-	// 		return res.status(500).send("Error reading file");
-	// 	}
-
-	// 	const base64Data = Buffer.from(data).toString('base64');
-
-
-	// 	file = base64Data;
-
-	// 	// fs.unlink(filePath, (err) => {
-	// 	//     if (err) {
-	// 	//         console.error(err);
-	// 	//     }
-	// 	// });
-	// });
-	// file = uploadedFile.buffer.toString('base64');
-	// const chunks = uploadedFile[0].size / 100000;
-	// for()
-	// res.send(uploadedFile[0].buffer.toString('base64'));
-	res.end("ok")
-});
+// app.post("/upload", upload.any(), (req, res) => {
+// 	// isLoading = true;
+// 	const uploadedFile = req.files[0];
+// 	filePath = uploadedFile.path;
+// 	res.end("ok");
+// 	// isLoading = false;
+// 	uploadCompletedPromise = new Promise((resolve) => {
+//         uploadCompletedPromise.resolve = resolve; // Set the resolve function of the promise
+//     });
+// });
 
 app.post("/deleteUser", (req) => {
 	users = users.filter(e => e._id !== req.body._id);

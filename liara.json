@@ -1,0 +1,11 @@
+{
+    "platform": "node",
+    "app": "mirza",
+    "port": 4000,
+    "disks": [
+      {
+        "name": "uploads",
+        "mountTo": "uploads"
+      }
+    ]
+  }
