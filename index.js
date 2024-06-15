@@ -8,9 +8,12 @@ var path = require('path');
 const fs = require('fs');
 const { Server } = require("socket.io");
 const multer = require('multer');
+const cron = require('node-cron');
+let file = {};
 const storage = multer.diskStorage({
 	destination: 'uploads/',
 	filename: function (req, file, cb) {
+		// console.log(file, 'multer file')
 		cb(null, Date.now() + path.extname(file.originalname)) //Appending extension
 	}
 });
@@ -58,11 +61,15 @@ let filePath = "";
 app.post("/upload", upload.any(), (req, res) => {
 	const uploadedFile = req.files[0];
 	filePath = uploadedFile.path;
+	file = { filePath: uploadedFile.path, size: uploadedFile.size, mimType:uploadedFile.mimetype };
+
+	console.log(uploadedFile,'/upload filename')
 	res.end("ok");
 });
 
 socketIO.on("connection", (socket) => {
 	console.log(`⚡: ${socket.id} user just connected!`);
+	socket.emit("connected", socket.id);
 	socket.on('sendMessage', (data) => {
 		const { roomId, ...newMessage } = data;
 		socket.in(roomId).emit('newMessage', newMessage);
@@ -95,12 +102,12 @@ socketIO.on("connection", (socket) => {
 			ffmpeg({
 				source: filePath,
 			}).on('end', () => {
-				fs.readFile(filePath, (err, data) => {
-					if (err) {
-						console.error(err);
-						return res.status(500).send("Error reading file");
-					};
-				});
+				// fs.readFile(filePath, (err, data) => {
+				// 	if (err) {
+				// 		console.error(err);
+				// 		return res.status(500).send("Error reading file");
+				// 	};
+				// });
 				sharp(`uploads/${filename}`).jpeg({ quality: 5 }).toBuffer()
 					.then(reducedData => {
 						const base64Data = Buffer.from(reducedData).toString('base64');
@@ -114,6 +121,15 @@ socketIO.on("connection", (socket) => {
 				timemarks: [10],
 				folder: "uploads/",
 			});
+		} else {
+			console.log('Upload not finished yet');
+		}
+	});
+
+	socket.on('sendFile', async (data) => {
+		const { roomId, ...newMessage } = data;
+		if (!!file?.filePath) {
+			socket.in(roomId).emit('newMessage', { ...newMessage, file: file?.filePath, mimType:file?.mimType })
 		} else {
 			console.log('Upload not finished yet');
 		}
@@ -154,22 +170,43 @@ socketIO.on("connection", (socket) => {
 		socket.emit("findRoomResponse", result);
 	});
 
-	socket.on("isUserInRoom", (data) => {
-		if (data.status === true) {
-			socket.broadcast.emit("isUserInRoomResponse", { 'status': true, 'name': data.user });
-		} else {
-			socket.broadcast.emit("isUserInRoomResponse", { 'status': false, 'name': data.user })
-		}
-	})
-
-	// set id and usename object exp: (res) == { 'id': 'adsxc213', 'name': 'ali'}
+	// set id and usename object exp: (res) == { 'id': 'adsxc213', 'name': 'ali', 'isUserInRoom': false}
 	socket.on("setSocketId", (res) => {
 		onlineUsers.unshift(res);
 		onlineUsers = uniq(onlineUsers, 'name');
 	});
 
-	socket.on("checkStatus", (contact) => {
-		socketIO.emit("checkStatusResponse", { 'status': !!onlineUsers.find(e => e.name === contact)?.id, 'name': contact });
+	socket.on("isUserInRoom", (data) => {
+		// const find = onlineUsers.find(e => e.name === data.user);
+		if (data.status === true) {
+			onlineUsers = onlineUsers.map((user) => {
+				if (user.name === data.user) {
+					return { ...user, isUserInRoom: true };
+				} else {
+					return user;
+				}
+			});
+			// socket.broadcast.emit("isUserInRoomResponse", { 'status': true, 'name': data.user });
+		} else {
+			onlineUsers = onlineUsers.map((user) => {
+				if (user.name === data.user) {
+					return { ...user, isUserInRoom: false };
+				} else {
+					return user;
+				}
+			});
+		}
+		socket.broadcast.emit("isUserInRoomResponse", onlineUsers?.find(e => e.name === data.user).isUserInRoom)
+	});
+
+	socket.on("checkStatus", async (contact) => {
+		const sockets = await socketIO.fetchSockets();
+		const socketIds = sockets.map(socket => socket.id);
+		const find = onlineUsers.find(e => e.name === contact);
+		console.log(socketIds, 'socketIds');
+		console.log(find, 'onlineUsers.find(e => e.name === contact)');
+		console.log(socketIds?.find(e => e === find?.id), 'socketIds.find(e=>e===find)');
+		socketIO.emit("checkStatusResponse", { 'status': find, 'name': contact });
 	});
 
 	socket.on("disconnect", () => {
@@ -184,14 +221,9 @@ app.get("/api", (req, res) => {
 });
 
 // app.post("/upload", upload.any(), (req, res) => {
-// 	// isLoading = true;
 // 	const uploadedFile = req.files[0];
 // 	filePath = uploadedFile.path;
 // 	res.end("ok");
-// 	// isLoading = false;
-// 	uploadCompletedPromise = new Promise((resolve) => {
-//         uploadCompletedPromise.resolve = resolve; // Set the resolve function of the promise
-//     });
 // });
 
 app.post("/deleteUser", (req) => {
@@ -246,6 +278,29 @@ app.post("/updateUser", async (req, res) => {
 		return res.status(400).kson({ status: `Error to Update User ${err}` })
 	}
 });
+
+// Schedule a task to delete files older than a day
+cron.schedule('0 0 * * *', () => {
+	const directory = 'uploads/';
+	console.log('firsttt')
+	fs.readdir(directory, (err, files) => {
+	  if (err) throw err;
+  
+	  for (const file of files) {
+		const filePath = directory + file;
+		const stat = fs.statSync(filePath);
+		const now = new Date();
+		const fileModifiedTime = new Date(stat.mtime);
+  
+		if (now - fileModifiedTime > 1000 * 60 * 60 * 24) {
+		  fs.unlink(filePath, (err) => {
+			if (err) throw err;
+			console.log(`Deleted ${filePath}`);
+		  });
+		}
+	  }
+	});
+  });
 
 app.get("/", (_, res) => {
 	return res.status(200).send('welcome version 1.0.2 mirzagram');
