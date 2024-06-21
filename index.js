@@ -68,7 +68,6 @@ socketIO.on("connection", (socket) => {
 	socket.on("joinInRoom", (id) => {
 		let result = chatRooms.filter(e => e.users[0]._id !== id || e.users[1]._id !== id);
 		result.forEach(e=>{
-			// if(!e) return;
 			console.log(e.id,'joinInRoom')
 			socket.join(e.id);
 		});
@@ -179,11 +178,6 @@ socketIO.on("connection", (socket) => {
 		const firstName = names[0]._id;
 		const secondName = names[1]._id;
 		let result = chatRooms.find(e => e.users[0]._id === firstName && e.users[1]._id === secondName || e.users[0]._id === secondName && e.users[1]._id === firstName);
-		// try {
-		// 	socket.join(result.id);
-		// } catch (err) {
-		// 	console.log('error to join room', err)
-		// }
 		socket.emit("findRoomResponse", result);
 	});
 
@@ -194,7 +188,6 @@ socketIO.on("connection", (socket) => {
 	});
 
 	socket.on("isUserInRoom", (data) => {
-		// console.log(data,'isUserInRoom')
 		if (data.status === true) {
 			onlineUsers = onlineUsers.map((user) => {
 				if (user.name === data.user) {
