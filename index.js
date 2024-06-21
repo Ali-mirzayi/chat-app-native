@@ -13,24 +13,19 @@ let file = {};
 const storage = multer.diskStorage({
 	destination: 'uploads/',
 	filename: function (req, file, cb) {
-		// console.log(file, 'multer file')
 		cb(null, Date.now() + path.extname(file.originalname)) //Appending extension
 	}
 });
 
 const upload = multer({ storage });
 
-
-// const ffmpegPath = "/usr/bin/ffmpeg";
-// const ffmpeg = require("./node_modules/fluent-ffmpeg/index");
+// use for tumbnail
+// const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
+// const ffmpeg = require("fluent-ffmpeg");
 // ffmpeg.setFfmpegPath(ffmpegPath);
 
-
-// use for tumbnail
-const ffmpegPath = require("./node_modules/@ffmpeg-installer/ffmpeg/index").path;
-// const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
-const ffmpeg = require("./node_modules/fluent-ffmpeg/index");
-ffmpeg.setFfmpegPath(ffmpegPath);
+const ffmpeg = require('fluent-ffmpeg');
+ffmpeg.setFfprobePath(process.env.FFPROBE_PATH);
 
 const sharp = require('sharp');
 
@@ -61,36 +56,46 @@ let filePath = "";
 app.post("/upload", upload.any(), (req, res) => {
 	const uploadedFile = req.files[0];
 	filePath = uploadedFile.path;
-	file = { filePath: uploadedFile.path, size: uploadedFile.size, mimType:uploadedFile.mimetype };
-
-	console.log(uploadedFile,'/upload filename')
+	file = { filePath: uploadedFile.path, size: uploadedFile.size, mimType: uploadedFile.mimetype };
+	console.log('File uploaded successfully')
 	res.end("ok");
 });
 
 socketIO.on("connection", (socket) => {
 	console.log(`⚡: ${socket.id} user just connected!`);
 	socket.emit("connected", socket.id);
+
+	socket.on("joinInRoom", (id) => {
+		let result = chatRooms.filter(e => e.users[0]._id !== id || e.users[1]._id !== id);
+		result.forEach(e=>{
+			// if(!e) return;
+			console.log(e.id,'joinInRoom')
+			socket.join(e.id);
+		});
+	});
+
 	socket.on('sendMessage', (data) => {
 		const { roomId, ...newMessage } = data;
 		socket.in(roomId).emit('newMessage', newMessage);
-		// socketIO.in(roomId).emit('newMessage', newMessage);
+		socket.to(roomId).emit('chatNewMessage', data);
 	});
 
 	socket.on('sendImage', (data) => {
 		const { roomId, ...newMessage } = data;
 		fs.readFile(filePath, (err, data) => {
 			if (err) {
-				console.error(err);
-				return res.status(500).send("Error reading file");
+				console.error("Error reading image",err);
 			};
 
 			sharp(data).jpeg({ quality: 5 }).toBuffer()
 				.then(reducedData => {
 					const base64Data = Buffer.from(reducedData).toString('base64');
-					socket.in(roomId).emit('newMessage', { ...newMessage, image: filePath, preView: base64Data });
+					socket.in(roomId).emit('newMessage', { ...newMessage, image: filePath, preView: base64Data,roomId });
+					socket.to(roomId).emit('chatNewMessage', { ...newMessage, image: filePath, preView: base64Data,roomId });
 				}).catch(err => {
-					console.error(err);
-					return res.status(500).send("Error processing image");
+					console.error("Error sharp image",err);
+					socket.in(roomId).emit('newMessage', { ...newMessage, image: filePath, preView: undefined,roomId });
+					socket.to(roomId).emit('chatNewMessage', { ...newMessage, image: filePath, preView: undefined,roomId });
 				});
 		});
 	});
@@ -99,28 +104,34 @@ socketIO.on("connection", (socket) => {
 		const { roomId, ...newMessage } = data;
 		if (filePath !== "") {
 			const filename = `${Date.now()}.jpg`;
-			ffmpeg({
-				source: filePath,
-			}).on('end', () => {
-				// fs.readFile(filePath, (err, data) => {
-				// 	if (err) {
-				// 		console.error(err);
-				// 		return res.status(500).send("Error reading file");
-				// 	};
-				// });
-				sharp(`uploads/${filename}`).jpeg({ quality: 5 }).toBuffer()
-					.then(reducedData => {
-						const base64Data = Buffer.from(reducedData).toString('base64');
-						socket.in(roomId).emit('newMessage', { ...newMessage, video: filePath, thumbnail: base64Data })
-					}).catch(err => {
-						console.error(err);
-						return res.status(500).send("Error processing image");
-					});
-			}).takeScreenshots({
-				filename,
-				timemarks: [10],
-				folder: "uploads/",
-			});
+			try {
+				ffmpeg({
+					source: filePath,
+				}).on('end', () => {
+					sharp(`uploads/${filename}`).jpeg({ quality: 5 }).toBuffer()
+						.then(reducedData => {
+							const base64Data = Buffer.from(reducedData).toString('base64');
+							console.log('thumbnail,', filePath, 'video sended');
+							socket.in(roomId).emit('newMessage', { ...newMessage, video: filePath, thumbnail: base64Data });
+							socket.to(roomId).emit('chatNewMessage', { ...newMessage, video: filePath, thumbnail: base64Data,roomId });
+						}).catch(err => {
+							socket.in(roomId).emit('newMessage', { ...newMessage, video: filePath, thumbnail: undefined });
+							socket.to(roomId).emit('chatNewMessage', { ...newMessage, video: filePath, thumbnail: undefined,roomId });
+							console.error(err, 'error creating base64 thumbnail');
+						});
+				}).on('error', (err) => {
+					console.error(err, 'error creating thumbnail');
+					socket.in(roomId).emit('newMessage', { ...newMessage, video: filePath, thumbnail: undefined });
+					socket.to(roomId).emit('chatNewMessage', { ...newMessage, video: filePath, thumbnail: undefined,roomId });
+				}).takeScreenshots({
+					filename,
+					timestamps: ['20%'],
+					folder: "uploads/",
+					// timemarks: [2]
+				});
+			} catch (e) {
+				console.log(e, 'error send thumbnail')
+			}
 		} else {
 			console.log('Upload not finished yet');
 		}
@@ -129,7 +140,9 @@ socketIO.on("connection", (socket) => {
 	socket.on('sendFile', async (data) => {
 		const { roomId, ...newMessage } = data;
 		if (!!file?.filePath) {
-			socket.in(roomId).emit('newMessage', { ...newMessage, file: file?.filePath, mimType:file?.mimType })
+			console.log('downloading file finished ...');
+			socket.in(roomId).emit('newMessage', { ...newMessage, file: file?.filePath, mimType: file?.mimType });
+			socket.to(roomId).emit('chatNewMessage', { ...newMessage, file: file?.filePath, mimType: file?.mimType,roomId });
 		} else {
 			console.log('Upload not finished yet');
 		}
@@ -143,30 +156,34 @@ socketIO.on("connection", (socket) => {
 		socket.emit('findUser', result);
 	});
 
-	socket.on("createRoom", (names) => {
-		// first condition for check user cant create room with self
-		// second condition for check user cant create room !!again with another user
-		const firstName = names[0]._id;
-		const secondName = names[1]._id;
-		if (firstName == secondName) {
-			return
-		} else if (!!chatRooms.find(e => e.users[0]._id === firstName && e.users[1]._id === secondName || e.users[0]._id === secondName && e.users[1]._id === firstName)) {
-			return
+	socket.on("createRoom", async({user,contact}) => {
+		const firstName = user._id;
+		const secondName = contact._id;
+		// condition for check user cant create room !!again with another user
+		if (!!chatRooms.find(e => e.users[0]._id === firstName && e.users[1]._id === secondName || e.users[0]._id === secondName && e.users[1]._id === firstName)) {
+			socketIO.to(socket.id).emit("createRoomResponse", undefined);
+			return;
 		}
 		const id = generateID();
-		chatRooms.unshift({ id: id, users: names, messages: [] });
-		socketIO.emit("roomsList", chatRooms);
+		const newRoom = { id: id, users: [user,contact], messages: [] };
+		chatRooms.unshift(newRoom);
+
+		socketIO.to(socket.id).emit("createRoomResponse", newRoom);
+		socket.join(id);
+		
+		const socketId = onlineUsers.find(e=>e.name===contact.name).id;
+		socketIO.to(socketId).emit("newRoom", newRoom);
 	});
 
 	socket.on("findRoom", (names) => {
 		const firstName = names[0]._id;
 		const secondName = names[1]._id;
 		let result = chatRooms.find(e => e.users[0]._id === firstName && e.users[1]._id === secondName || e.users[0]._id === secondName && e.users[1]._id === firstName);
-		try {
-			socket.join(result.id);
-		} catch (err) {
-			console.log('error to join room', err)
-		}
+		// try {
+		// 	socket.join(result.id);
+		// } catch (err) {
+		// 	console.log('error to join room', err)
+		// }
 		socket.emit("findRoomResponse", result);
 	});
 
@@ -177,7 +194,7 @@ socketIO.on("connection", (socket) => {
 	});
 
 	socket.on("isUserInRoom", (data) => {
-		// const find = onlineUsers.find(e => e.name === data.user);
+		// console.log(data,'isUserInRoom')
 		if (data.status === true) {
 			onlineUsers = onlineUsers.map((user) => {
 				if (user.name === data.user) {
@@ -186,7 +203,6 @@ socketIO.on("connection", (socket) => {
 					return user;
 				}
 			});
-			// socket.broadcast.emit("isUserInRoomResponse", { 'status': true, 'name': data.user });
 		} else {
 			onlineUsers = onlineUsers.map((user) => {
 				if (user.name === data.user) {
@@ -195,17 +211,12 @@ socketIO.on("connection", (socket) => {
 					return user;
 				}
 			});
-		}
-		socket.broadcast.emit("isUserInRoomResponse", onlineUsers?.find(e => e.name === data.user).isUserInRoom)
+		};
+		socket.broadcast.emit("isUserInRoomResponse", onlineUsers?.find(e => e.name === data.user)?.isUserInRoom)
 	});
 
-	socket.on("checkStatus", async (contact) => {
-		const sockets = await socketIO.fetchSockets();
-		const socketIds = sockets.map(socket => socket.id);
+	socket.on("checkStatus", (contact) => {
 		const find = onlineUsers.find(e => e.name === contact);
-		console.log(socketIds, 'socketIds');
-		console.log(find, 'onlineUsers.find(e => e.name === contact)');
-		console.log(socketIds?.find(e => e === find?.id), 'socketIds.find(e=>e===find)');
 		socketIO.emit("checkStatusResponse", { 'status': find, 'name': contact });
 	});
 
@@ -215,16 +226,6 @@ socketIO.on("connection", (socket) => {
 		console.log(`🔥: ${socket.id} user disconnected`);
 	});
 });
-
-app.get("/api", (req, res) => {
-	return res.status(200).json(chatRooms);
-});
-
-// app.post("/upload", upload.any(), (req, res) => {
-// 	const uploadedFile = req.files[0];
-// 	filePath = uploadedFile.path;
-// 	res.end("ok");
-// });
 
 app.post("/deleteUser", (req) => {
 	users = users.filter(e => e._id !== req.body._id);
@@ -236,7 +237,6 @@ app.post("/checkUserToAdd", (req, res) => {
 		return res.status(400).json({ isOK: false })
 	} else {
 		users.unshift(req.body);
-		// console.log(users);
 		return res.status(200).json({ isOK: true });
 	}
 });
@@ -275,35 +275,35 @@ app.post("/updateUser", async (req, res) => {
 		});
 		return res.status(200).json({ status: `User is update ${newUser}` })
 	} catch (err) {
-		return res.status(400).kson({ status: `Error to Update User ${err}` })
+		return res.status(400).json({ status: `Error to Update User ${err}` })
 	}
 });
 
 // Schedule a task to delete files older than a day
 cron.schedule('0 0 * * *', () => {
 	const directory = 'uploads/';
-	console.log('firsttt')
+	console.log('midnight is come')
 	fs.readdir(directory, (err, files) => {
-	  if (err) throw err;
-  
-	  for (const file of files) {
-		const filePath = directory + file;
-		const stat = fs.statSync(filePath);
-		const now = new Date();
-		const fileModifiedTime = new Date(stat.mtime);
-  
-		if (now - fileModifiedTime > 1000 * 60 * 60 * 24) {
-		  fs.unlink(filePath, (err) => {
-			if (err) throw err;
-			console.log(`Deleted ${filePath}`);
-		  });
+		if (err) throw err;
+
+		for (const file of files) {
+			const filePath = directory + file;
+			const stat = fs.statSync(filePath);
+			const now = new Date();
+			const fileModifiedTime = new Date(stat.mtime);
+
+			if (now - fileModifiedTime > 1000 * 60 * 60 * 24) {
+				fs.unlink(filePath, (err) => {
+					if (err) throw err;
+					console.log(`Deleted ${filePath}`);
+				});
+			}
 		}
-	  }
 	});
-  });
+});
 
 app.get("/", (_, res) => {
-	return res.status(200).send('welcome version 1.0.2 mirzagram');
+	return res.status(200).send('welcome version 1.2.0 mirzagram');
 });
 
 server.listen(PORT, () => {
