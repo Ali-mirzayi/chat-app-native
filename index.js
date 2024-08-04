@@ -48,7 +48,10 @@ const expo = new Expo();
 
 const generateID = () => Math.random().toString(36).substring(2, 10);
 let chatRooms = [];
-let users = [{ _id: '1', name: 'ali mirzaei', avatar: '', token: 'ExponentPushToken[itsAli]' }];
+let users = [
+	{ _id: '1', name: 'ali mirzaei', avatar: '', token: 'ExponentPushToken[itsAli]' },
+	{ _id: '2', name: 'Mohsen', avatar: '', token: 'ExponentPushToken[itsMohsen]' }
+];
 let onlineUsers = [];
 
 let filePath = "";
@@ -65,36 +68,35 @@ socketIO.on("connection", (socket) => {
 	console.log(`⚡: ${socket.id} user just connected!`);
 	socket.emit("connected", socket.id);
 
-	socket.on("joinInRoom", (id) => {
+	socket.on("joinInRoom", (roomId) => {
+		socket.join(chatRooms.find(e => e.id === roomId)?.id);
+	});
+
+	socket.on("joinInRooms", (id) => {
 		let result = chatRooms.filter(e => e.users[0]._id !== id || e.users[1]._id !== id);
-		result.forEach(e=>{
-			console.log(e.id,'joinInRoom')
+		result.forEach(e => {
 			socket.join(e.id);
 		});
 	});
 
 	socket.on('sendMessage', (data) => {
-		const { roomId, ...newMessage } = data;
-		socket.in(roomId).emit('newMessage', newMessage);
-		socket.to(roomId).emit('chatNewMessage', data);
+		socket.to(data.roomId).emit('chatNewMessage', data);
 	});
 
 	socket.on('sendImage', (data) => {
 		const { roomId, ...newMessage } = data;
 		fs.readFile(filePath, (err, data) => {
 			if (err) {
-				console.error("Error reading image",err);
+				console.error("Error reading image", err);
 			};
 
 			sharp(data).jpeg({ quality: 5 }).toBuffer()
 				.then(reducedData => {
 					const base64Data = Buffer.from(reducedData).toString('base64');
-					socket.in(roomId).emit('newMessage', { ...newMessage, image: filePath, preView: base64Data,roomId });
-					socket.to(roomId).emit('chatNewMessage', { ...newMessage, image: filePath, preView: base64Data,roomId });
+					socket.to(roomId).emit('chatNewMessage', { ...newMessage, image: filePath, preView: base64Data, roomId });
 				}).catch(err => {
-					console.error("Error sharp image",err);
-					socket.in(roomId).emit('newMessage', { ...newMessage, image: filePath, preView: undefined,roomId });
-					socket.to(roomId).emit('chatNewMessage', { ...newMessage, image: filePath, preView: undefined,roomId });
+					console.error("Error sharp image", err);
+					socket.to(roomId).emit('chatNewMessage', { ...newMessage, image: filePath, preView: undefined, roomId });
 				});
 		});
 	});
@@ -111,17 +113,14 @@ socketIO.on("connection", (socket) => {
 						.then(reducedData => {
 							const base64Data = Buffer.from(reducedData).toString('base64');
 							console.log('thumbnail,', filePath, 'video sended');
-							socket.in(roomId).emit('newMessage', { ...newMessage, video: filePath, thumbnail: base64Data });
-							socket.to(roomId).emit('chatNewMessage', { ...newMessage, video: filePath, thumbnail: base64Data,roomId });
+							socket.to(roomId).emit('chatNewMessage', { ...newMessage, video: filePath, thumbnail: base64Data, roomId });
 						}).catch(err => {
-							socket.in(roomId).emit('newMessage', { ...newMessage, video: filePath, thumbnail: undefined });
-							socket.to(roomId).emit('chatNewMessage', { ...newMessage, video: filePath, thumbnail: undefined,roomId });
+							socket.to(roomId).emit('chatNewMessage', { ...newMessage, video: filePath, thumbnail: undefined, roomId });
 							console.error(err, 'error creating base64 thumbnail');
 						});
 				}).on('error', (err) => {
 					console.error(err, 'error creating thumbnail');
-					socket.in(roomId).emit('newMessage', { ...newMessage, video: filePath, thumbnail: undefined });
-					socket.to(roomId).emit('chatNewMessage', { ...newMessage, video: filePath, thumbnail: undefined,roomId });
+					socket.to(roomId).emit('chatNewMessage', { ...newMessage, video: filePath, thumbnail: undefined, roomId });
 				}).takeScreenshots({
 					filename,
 					timestamps: ['20%'],
@@ -140,8 +139,7 @@ socketIO.on("connection", (socket) => {
 		const { roomId, ...newMessage } = data;
 		if (!!file?.filePath) {
 			console.log('downloading file finished ...');
-			socket.in(roomId).emit('newMessage', { ...newMessage, file: file?.filePath, mimType: file?.mimType });
-			socket.to(roomId).emit('chatNewMessage', { ...newMessage, file: file?.filePath, mimType: file?.mimType,roomId });
+			socket.to(roomId).emit('chatNewMessage', { ...newMessage, file: file?.filePath, mimType: file?.mimType, roomId });
 		} else {
 			console.log('Upload not finished yet');
 		}
@@ -149,29 +147,26 @@ socketIO.on("connection", (socket) => {
 
 	socket.on("findUser", (name) => {
 		const { user, search } = name;
-		// first filter just filter user who is host and second for search
 		let result = users.filter(e => e.name.includes(search)).filter(e => e.name !== user.name);
-		// let result = users.filter(e => e._id !== user._id).filter(e => e.name.includes(search));
 		socket.emit('findUser', result);
 	});
 
-	socket.on("createRoom", async({user,contact}) => {
+	socket.on("createRoom", async ({ user, contact }) => {
 		const firstName = user._id;
 		const secondName = contact._id;
-		// condition for check user cant create room !!again with another user
 		if (!!chatRooms.find(e => e.users[0]._id === firstName && e.users[1]._id === secondName || e.users[0]._id === secondName && e.users[1]._id === firstName)) {
-			socketIO.to(socket.id).emit("createRoomResponse", undefined);
 			return;
 		}
 		const id = generateID();
-		const newRoom = { id: id, users: [user,contact], messages: [] };
+		const newRoom = { id: id, users: [user, contact], messages: [] };
 		chatRooms.unshift(newRoom);
-
-		socketIO.to(socket.id).emit("createRoomResponse", newRoom);
 		socket.join(id);
-		
-		const socketId = onlineUsers.find(e=>e.name===contact.name).id;
-		socketIO.to(socketId).emit("newRoom", newRoom);
+
+		socket.emit("createRoomResponse", {newRoom,contact});
+
+		const contactSocketId = onlineUsers.find(e => e.userId === secondName)?.socketId;
+
+		if(!!contactSocketId) {socketIO.to(contactSocketId).emit("newRoom", newRoom)}
 	});
 
 	socket.on("findRoom", (names) => {
@@ -181,40 +176,36 @@ socketIO.on("connection", (socket) => {
 		socket.emit("findRoomResponse", result);
 	});
 
-	// set id and usename object exp: (res) == { 'id': 'adsxc213', 'name': 'ali', 'isUserInRoom': false}
+	// set id and usename object exp: (res) == { 'socketId': 'adsxc213', 'userId': 'sadbcv', 'userRoomId': 'sadasdzxc'}
 	socket.on("setSocketId", (res) => {
 		onlineUsers.unshift(res);
-		onlineUsers = uniq(onlineUsers, 'name');
+		onlineUsers = uniq(onlineUsers, 'userId');
+		socketIO.emit('userConnected', onlineUsers.map(e => e.userId));
 	});
 
-	socket.on("isUserInRoom", (data) => {
-		if (data.status === true) {
-			onlineUsers = onlineUsers.map((user) => {
-				if (user.name === data.user) {
-					return { ...user, isUserInRoom: true };
-				} else {
-					return user;
-				}
-			});
-		} else {
-			onlineUsers = onlineUsers.map((user) => {
-				if (user.name === data.user) {
-					return { ...user, isUserInRoom: false };
-				} else {
-					return user;
-				}
-			});
-		};
-		socket.broadcast.emit("isUserInRoomResponse", onlineUsers?.find(e => e.name === data.user)?.isUserInRoom)
+	socket.on("isUserInRoom", ({ userId, contactId, userRoomId }) => {
+		onlineUsers = onlineUsers.map((user) => {
+			if (user.userId === userId) {
+				return { ...user, userRoomId: userRoomId };
+			} else {
+				return user;
+			}
+		});
+		const userStatus = onlineUsers?.find(e => e.userId === userId);
+		const contactStatus = onlineUsers?.find(e => e.userId === contactId);
+		socketIO.to(contactStatus?.socketId).to(socket.id).emit("isUserInRoomResponse", userStatus?.userRoomId === contactStatus?.userRoomId)
 	});
 
-	socket.on("checkStatus", (contact) => {
-		const find = onlineUsers.find(e => e.name === contact);
-		socketIO.emit("checkStatusResponse", { 'status': find, 'name': contact });
+	socket.on("checkStatus", ({ contactId, userRoomId }) => {
+		const find = onlineUsers?.find(e => e.userId === contactId);
+		const isInRoom = find?.userRoomId === userRoomId
+		socket.emit("checkStatusResponse", { 'status': !!find?.socketId, 'isInRoom': isInRoom });
+		// socketIO.to(socket.id).emit("checkStatusResponse", { 'status': !!find?.socketId, 'isInRoom': isInRoom });
 	});
 
 	socket.on("disconnect", () => {
-		onlineUsers = onlineUsers.filter(e => e.id !== socket.id);
+		onlineUsers = onlineUsers.filter(e => e.socketId !== socket.id);
+		socketIO.emit('userDisconnected', onlineUsers.map(e => e.userId));
 		socket.disconnect(socket);
 		console.log(`🔥: ${socket.id} user disconnected`);
 	});
@@ -236,7 +227,6 @@ app.post("/checkUserToAdd", (req, res) => {
 
 app.post("/sendPushNotifications", async (req, res) => {
 	const { user, message, token, roomId } = req.body;
-	console.log(req.body)
 	if (!Expo.isExpoPushToken(token)) {
 		console.error(`Push token ${token} is not a valid Expo push token`);
 		return res.status(400).json({ data: `Push token ${token} is not a valid Expo push token` })
