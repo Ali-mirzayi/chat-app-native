@@ -145,6 +145,16 @@ socketIO.on("connection", (socket) => {
 		}
 	});
 
+	socket.on('sendAudio', async (data) => {
+		const { roomId, ...newMessage } = data;
+		if (!!file?.filePath) {
+			console.log('downloading file finished ...');
+			socket.to(roomId).emit('chatNewMessage', { ...newMessage, audio: file?.filePath, roomId });
+		} else {
+			console.log('Upload not finished yet');
+		}
+	});
+
 	socket.on("findUser", (name) => {
 		const { user, search } = name;
 		let result = users.filter(e => e.name.includes(search)).filter(e => e.name !== user.name);
