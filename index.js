@@ -19,7 +19,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// use for tumbnail
+// use for tumbnail on windows
 // const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 // const ffmpeg = require("fluent-ffmpeg");
 // ffmpeg.setFfmpegPath(ffmpegPath);
@@ -52,6 +52,7 @@ let users = [
 	{ _id: '1', name: 'ali mirzaei', avatar: '', token: 'ExponentPushToken[itsAli]' },
 	{ _id: '2', name: 'Mohsen', avatar: '', token: 'ExponentPushToken[itsMohsen]' }
 ];
+
 let onlineUsers = [];
 
 let filePath = "";
@@ -59,7 +60,7 @@ let filePath = "";
 app.post("/upload", upload.any(), (req, res) => {
 	const uploadedFile = req.files[0];
 	filePath = uploadedFile.path;
-	file = { filePath: uploadedFile.path, size: uploadedFile.size, mimType: uploadedFile.mimetype };
+	file = { filePath: uploadedFile.path, size: uploadedFile.size, mimeType: uploadedFile.mimetype };
 	console.log('File uploaded successfully')
 	res.end("ok");
 });
@@ -139,7 +140,7 @@ socketIO.on("connection", (socket) => {
 		const { roomId, ...newMessage } = data;
 		if (!!file?.filePath) {
 			console.log('downloading file finished ...');
-			socket.to(roomId).emit('chatNewMessage', { ...newMessage, file: file?.filePath, mimType: file?.mimType, roomId });
+			socket.to(roomId).emit('chatNewMessage', { ...newMessage, file: file?.filePath, mimeType: file?.mimeType, roomId });
 		} else {
 			console.log('Upload not finished yet');
 		}
@@ -157,13 +158,14 @@ socketIO.on("connection", (socket) => {
 
 	socket.on("findUser", (name) => {
 		const { user, search } = name;
-		let result = users.filter(e => e.name.includes(search)).filter(e => e.name !== user.name);
+		let result = users.filter(e => e.name.toLocaleLowerCase().includes(search)).filter(e => e.name !== user.name);
 		socket.emit('findUser', result);
 	});
 
 	socket.on("createRoom", async ({ user, contact }) => {
 		const firstName = user._id;
 		const secondName = contact._id;
+		console.log('socket.on("createRoom", { user, contact });')
 		if (!!chatRooms.find(e => e.users[0]._id === firstName && e.users[1]._id === secondName || e.users[0]._id === secondName && e.users[1]._id === firstName)) {
 			return;
 		}
@@ -172,18 +174,35 @@ socketIO.on("connection", (socket) => {
 		chatRooms.unshift(newRoom);
 		socket.join(id);
 
-		socket.emit("createRoomResponse", {newRoom,contact});
+		socket.emit("createRoomResponse", { newRoom, contact });
 
 		const contactSocketId = onlineUsers.find(e => e.userId === secondName)?.socketId;
 
-		if(!!contactSocketId) {socketIO.to(contactSocketId).emit("newRoom", newRoom)}
+		if (!!contactSocketId) { socketIO.to(contactSocketId).emit("newRoom", newRoom) }
 	});
 
 	socket.on("findRoom", (names) => {
-		const firstName = names[0]._id;
-		const secondName = names[1]._id;
-		let result = chatRooms.find(e => e.users[0]._id === firstName && e.users[1]._id === secondName || e.users[0]._id === secondName && e.users[1]._id === firstName);
-		socket.emit("findRoomResponse", result);
+		const { user, contact } = names;
+		let result = chatRooms.find(e => e.users[0]._id === user._id && e.users[1]._id === contact._id || e.users[0]._id === contact._id && e.users[1]._id === user._id);
+		if (!result?.id) {
+			const firstName = user._id;
+			const secondName = contact._id;
+			if (!!chatRooms.find(e => e.users[0]._id === firstName && e.users[1]._id === secondName || e.users[0]._id === secondName && e.users[1]._id === firstName)) {
+				return;
+			}
+			const id = generateID();
+			const newRoom = { id: id, users: [user, contact], messages: [] };
+			chatRooms.unshift(newRoom);
+			socket.join(id);
+	
+			socket.emit("createRoomResponse", { newRoom, contact });
+	
+			const contactSocketId = onlineUsers.find(e => e.userId === secondName)?.socketId;
+	
+			if (!!contactSocketId) { socketIO.to(contactSocketId).emit("newRoom", newRoom) }
+		} else {
+			socket.emit("findRoomResponse", { result, contact });
+		}
 	});
 
 	// set id and usename object exp: (res) == { 'socketId': 'adsxc213', 'userId': 'sadbcv', 'userRoomId': 'sadasdzxc'}
@@ -227,7 +246,7 @@ app.post("/deleteUser", (req) => {
 });
 
 app.post("/checkUserToAdd", (req, res) => {
-	if (!!users.find(e => e.name === req.body.name)) {
+	if (!!users.find(e => e.name.toLocaleLowerCase() === req.body.name.toLocaleLowerCase())) {
 		return res.status(400).json({ isOK: false })
 	} else {
 		users.unshift(req.body);
