@@ -156,6 +156,11 @@ socketIO.on("connection", (socket) => {
 		}
 	});
 
+	socket.on('recivedMessage', ({ messageId, roomId, contact, contactId }) => {
+		const contactSocketId = onlineUsers?.find(e => e.userId === contactId).socketId;
+		socketIO.to(contactSocketId).emit('recivedMessage', { messageId, contact, roomId });
+	});
+
 	socket.on("findUser", (name) => {
 		const { user, search } = name;
 		let result = users.filter(e => e.name.toLocaleLowerCase().includes(search)).filter(e => e.name !== user.name);
@@ -194,11 +199,11 @@ socketIO.on("connection", (socket) => {
 			const newRoom = { id: id, users: [user, contact], messages: [] };
 			chatRooms.unshift(newRoom);
 			socket.join(id);
-	
+
 			socket.emit("createRoomResponse", { newRoom, contact });
-	
+
 			const contactSocketId = onlineUsers.find(e => e.userId === secondName)?.socketId;
-	
+
 			if (!!contactSocketId) { socketIO.to(contactSocketId).emit("newRoom", newRoom) }
 		} else {
 			socket.emit("findRoomResponse", { result, contact });
@@ -277,14 +282,26 @@ app.post("/sendPushNotifications", async (req, res) => {
 
 app.post("/updateUser", async (req, res) => {
 	const newUser = req.body.user;
+	const newRooms = req.body.cleanRoom;
+
 	try {
-		users = users.map(user => {
-			if (user._id === newUser._id) {
-				return newUser;
-			} else {
-				return user;
-			}
-		});
+		const isUserExist = users.find(user => user._id === newUser._id)
+		if (isUserExist === undefined) {
+			users.push(newUser);
+			if (!!newRooms && (newRooms?.length <= 0)) return;
+			const remainingRooms = newRooms.filter(newRoom =>
+				!chatRooms.some(chatRoom => chatRoom.id === newRoom.id)
+			);
+			chatRooms = [...chatRooms, ...remainingRooms];
+		} else {
+			users = users.map(user => {
+				if (user._id === newUser._id) {
+					return newUser;
+				} else {
+					return user;
+				}
+			});
+		}
 		return res.status(200).json({ status: `User is update ${newUser}` })
 	} catch (err) {
 		return res.status(400).json({ status: `Error to Update User ${err}` })
