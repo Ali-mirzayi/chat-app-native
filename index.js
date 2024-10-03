@@ -67,18 +67,18 @@ app.post("/upload", upload.any(), (req, res) => {
 
 socketIO.on("connection", (socket) => {
 	console.log(`⚡: ${socket.id} user just connected!`);
-	socket.emit("connected", socket.id);
+	socket.emit("connected");
 
 	socket.on("joinInRoom", (roomId) => {
 		socket.join(chatRooms.find(e => e.id === roomId)?.id);
 	});
 
-	socket.on("joinInRooms", (id) => {
-		let result = chatRooms.filter(e => e.users[0]._id !== id || e.users[1]._id !== id);
-		result.forEach(e => {
-			socket.join(e.id);
-		});
-	});
+	// socket.on("joinInRooms", (id) => {
+	// 	let result = chatRooms.filter(e => e.users[0]._id !== id || e.users[1]._id !== id);
+	// 	result.forEach(e => {
+	// 		socket.join(e.id);
+	// 	});
+	// });
 
 	socket.on('sendMessage', (data) => {
 		socket.to(data.roomId).emit('chatNewMessage', data);
@@ -170,7 +170,6 @@ socketIO.on("connection", (socket) => {
 	socket.on("createRoom", async ({ user, contact }) => {
 		const firstName = user._id;
 		const secondName = contact._id;
-		console.log('socket.on("createRoom", { user, contact });')
 		if (!!chatRooms.find(e => e.users[0]._id === firstName && e.users[1]._id === secondName || e.users[0]._id === secondName && e.users[1]._id === firstName)) {
 			return;
 		}
@@ -180,6 +179,10 @@ socketIO.on("connection", (socket) => {
 		socket.join(id);
 
 		socket.emit("createRoomResponse", { newRoom, contact });
+
+		const contactSocket = onlineUsers.find(user=>user.userId===secondName)?.socket;
+
+		contactSocket.join(id);
 
 		const contactSocketId = onlineUsers.find(e => e.userId === secondName)?.socketId;
 
@@ -200,6 +203,12 @@ socketIO.on("connection", (socket) => {
 			chatRooms.unshift(newRoom);
 			socket.join(id);
 
+			const contactSocket = onlineUsers.find(user=>user.userId===secondName)?.socket;
+
+			if(contactSocket){
+				contactSocket.join(id);
+			};
+
 			socket.emit("createRoomResponse", { newRoom, contact });
 
 			const contactSocketId = onlineUsers.find(e => e.userId === secondName)?.socketId;
@@ -210,11 +219,21 @@ socketIO.on("connection", (socket) => {
 		}
 	});
 
-	// set id and usename object exp: (res) == { 'socketId': 'adsxc213', 'userId': 'sadbcv', 'userRoomId': 'sadasdzxc'}
-	socket.on("setSocketId", (res) => {
-		onlineUsers.unshift(res);
+	// set id and usename object exp: (res) == { 'socketId': 'adsxc213', 'socket': socket, 'userId': 'sadbcv', 'userRoomId': 'sadasdzxc'}
+	socket.on("setSocketId", (userId) => {
+		onlineUsers.unshift({ 'socketId': socket.id, 'socket': socket, 'userId': userId, 'userRoomId': undefined });
 		onlineUsers = uniq(onlineUsers, 'userId');
 		socketIO.emit('userConnected', onlineUsers.map(e => e.userId));
+	});
+
+	socket.on("setSocketIdAndjoin", (userId) => {
+		onlineUsers.unshift({ 'socketId': socket.id, 'socket': socket, 'userId': userId, 'userRoomId': undefined });
+		onlineUsers = uniq(onlineUsers, 'userId');
+		socketIO.emit('userConnected', onlineUsers.map(e => e.userId));
+		let result = chatRooms.filter(e => e.users[0]._id !== userId || e.users[1]._id !== userId);
+		result.forEach(e => {
+			socket.join(e.id);
+		});
 	});
 
 	socket.on("isUserInRoom", ({ userId, contactId, userRoomId }) => {
@@ -234,11 +253,11 @@ socketIO.on("connection", (socket) => {
 		const find = onlineUsers?.find(e => e.userId === contactId);
 		const isInRoom = find?.userRoomId === userRoomId
 		socket.emit("checkStatusResponse", { 'status': !!find?.socketId, 'isInRoom': isInRoom });
-		// socketIO.to(socket.id).emit("checkStatusResponse", { 'status': !!find?.socketId, 'isInRoom': isInRoom });
 	});
 
 	socket.on("disconnect", () => {
 		onlineUsers = onlineUsers.filter(e => e.socketId !== socket.id);
+		// this could be better
 		socketIO.emit('userDisconnected', onlineUsers.map(e => e.userId));
 		socket.disconnect(socket);
 		console.log(`🔥: ${socket.id} user disconnected`);
