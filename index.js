@@ -7,6 +7,7 @@ const PORT = 4000;
 var path = require('path');
 const fs = require('fs');
 const { Server } = require("socket.io");
+require('dotenv').config();
 const multer = require('multer');
 const cron = require('node-cron');
 let file = {};
@@ -66,19 +67,15 @@ app.post("/upload", upload.any(), (req, res) => {
 });
 
 socketIO.on("connection", (socket) => {
+	const token = socket.handshake.auth.token;
+	const isValid = process.env.SOCKET_PASS === token;
+	if (!isValid) return;
 	console.log(`⚡: ${socket.id} user just connected!`);
 	socket.emit("connected");
 
 	socket.on("joinInRoom", (roomId) => {
 		socket.join(chatRooms.find(e => e.id === roomId)?.id);
 	});
-
-	// socket.on("joinInRooms", (id) => {
-	// 	let result = chatRooms.filter(e => e.users[0]._id !== id || e.users[1]._id !== id);
-	// 	result.forEach(e => {
-	// 		socket.join(e.id);
-	// 	});
-	// });
 
 	socket.on('sendMessage', (data) => {
 		socket.to(data.roomId).emit('chatNewMessage', data);
@@ -184,9 +181,9 @@ socketIO.on("connection", (socket) => {
 
 		contactSocket.join(id);
 
-		const contactSocketId = onlineUsers.find(e => e.userId === secondName)?.socketId;
+		// const contactSocketId = onlineUsers.find(e => e.userId === secondName)?.socketId;
 
-		if (!!contactSocketId) { socketIO.to(contactSocketId).emit("newRoom", newRoom) }
+		// if (!!contactSocketId) { socketIO.to(contactSocketId).emit("newRoom", newRoom) }
 	});
 
 	socket.on("findRoom", (names) => {
@@ -211,9 +208,9 @@ socketIO.on("connection", (socket) => {
 
 			socket.emit("createRoomResponse", { newRoom, contact });
 
-			const contactSocketId = onlineUsers.find(e => e.userId === secondName)?.socketId;
+			// const contactSocketId = onlineUsers.find(e => e.userId === secondName)?.socketId;
 
-			if (!!contactSocketId) { socketIO.to(contactSocketId).emit("newRoom", newRoom) }
+			// if (!!contactSocketId) { socketIO.to(contactSocketId).emit("newRoom", newRoom) }
 		} else {
 			socket.emit("findRoomResponse", { result, contact });
 		}
