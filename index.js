@@ -177,13 +177,11 @@ socketIO.on("connection", (socket) => {
 
 		socket.emit("createRoomResponse", { newRoom, contact });
 
-		const contactSocket = onlineUsers.find(user=>user.userId===secondName)?.socket;
+		const contactSocket = onlineUsers.find(user => user.userId === secondName)?.socket;
 
-		contactSocket.join(id);
-
-		// const contactSocketId = onlineUsers.find(e => e.userId === secondName)?.socketId;
-
-		// if (!!contactSocketId) { socketIO.to(contactSocketId).emit("newRoom", newRoom) }
+		if (contactSocket) {
+			contactSocket.join(id);
+		};
 	});
 
 	socket.on("findRoom", (names) => {
@@ -200,17 +198,13 @@ socketIO.on("connection", (socket) => {
 			chatRooms.unshift(newRoom);
 			socket.join(id);
 
-			const contactSocket = onlineUsers.find(user=>user.userId===secondName)?.socket;
+			const contactSocket = onlineUsers.find(user => user.userId === secondName)?.socket;
 
-			if(contactSocket){
+			if (contactSocket) {
 				contactSocket.join(id);
 			};
 
 			socket.emit("createRoomResponse", { newRoom, contact });
-
-			// const contactSocketId = onlineUsers.find(e => e.userId === secondName)?.socketId;
-
-			// if (!!contactSocketId) { socketIO.to(contactSocketId).emit("newRoom", newRoom) }
 		} else {
 			socket.emit("findRoomResponse", { result, contact });
 		}
