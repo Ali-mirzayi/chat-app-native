@@ -342,7 +342,7 @@ cron.schedule('0 0 * * *', () => {
 });
 
 app.get("/", (_, res) => {
-	return res.status(200).send('welcome version 1.2.0 mirzagram');
+	return res.status(200).send('welcome version 1.5.5 mirzagram');
 });
 
 server.listen(PORT, () => {
